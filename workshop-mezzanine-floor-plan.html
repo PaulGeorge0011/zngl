@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>车间夹层平面示意图</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: #f5f5f7;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 48px 24px;
+    }
+
+    h1 {
+      font-size: 24px;
+      font-weight: 600;
+      color: #1d1d1f;
+      margin-bottom: 8px;
+      letter-spacing: -0.02em;
+    }
+
+    .subtitle {
+      font-size: 14px;
+      color: #86868b;
+      margin-bottom: 48px;
+    }
+
+    .floor-plan-container {
+      background: #ffffff;
+      border-radius: 16px;
+      padding: 48px;
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+      width: 100%;
+      max-width: 900px;
+    }
+
+    .legend {
+      display: flex;
+      gap: 32px;
+      margin-bottom: 32px;
+      flex-wrap: wrap;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: #1d1d1f;
+    }
+
+    .legend-color {
+      width: 16px;
+      height: 16px;
+      border-radius: 4px;
+    }
+
+    .color-work { background: #e8f4ea; border: 1px solid #34c759; }
+    .color-storage { background: #fff3e0; border: 1px solid #ff9500; }
+    .color-aisle { background: #f5f5f7; border: 1px solid #d2d2d7; }
+    .color-stair { background: #e8e8ed; border: 1px solid #636366; }
+
+    .floor-plan-svg {
+      width: 100%;
+      height: auto;
+    }
+
+    /* 工作区 */
+    .zone-work {
+      fill: #e8f4ea;
+      stroke: #34c759;
+      stroke-width: 2;
+    }
+
+    /* 货架存储区 */
+    .zone-storage {
+      fill: #fff3e0;
+      stroke: #ff9500;
+      stroke-width: 2;
+    }
+
+    /* 通道 */
+    .zone-aisle {
+      fill: #f5f5f7;
+      stroke: #d2d2d7;
+      stroke-width: 1.5;
+      stroke-dasharray: 8 4;
+    }
+
+    /* 楼梯 */
+    .zone-stair {
+      fill: #e8e8ed;
+      stroke: #636366;
+      stroke-width: 2;
+    }
+
+    /* 货架单元 */
+    .shelf {
+      fill: #ffe4b8;
+      stroke: #ff9500;
+      stroke-width: 1;
+    }
+
+    /* 标注文字 */
+    .label {
+      font-size: 14px;
+      font-weight: 500;
+      fill: #1d1d1f;
+    }
+
+    .label-small {
+      font-size: 11px;
+      fill: #86868b;
+    }
+
+    .label-title {
+      font-size: 18px;
+      font-weight: 600;
+      fill: #1d1d1f;
+    }
+
+    /* 指北针 */
+    .north-arrow {
+      fill: #1d1d1f;
+    }
+
+    .north-text {
+      font-size: 12px;
+      font-weight: 600;
+      fill: #1d1d1f;
+    }
+  </style>
+</head>
+<body>
+  <h1>车间夹层平面示意图</h1>
+  <p class="subtitle">Mezzanine Floor Plan</p>
+
+  <div class="floor-plan-container">
+    <div class="legend">
+      <div class="legend-item">
+        <div class="legend-color color-work"></div>
+        <span>工作区</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-color color-storage"></div>
+        <span>货架存储区</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-color color-aisle"></div>
+        <span>通道</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-color color-stair"></div>
+        <span>楼梯</span>
+      </div>
+    </div>
+
+    <svg class="floor-plan-svg" viewBox="0 0 800 600" xmlns="http://www.w3.org/2000/svg">
+      <!-- 外墙轮廓 -->
+      <rect x="40" y="40" width="720" height="520" fill="none" stroke="#1d1d1f" stroke-width="3"/>
+
+      <!-- 通道 - 主通道 (东西向) -->
+      <rect class="zone-aisle" x="40" y="260" width="720" height="80"/>
+
+      <!-- 通道 - 副通道 (南北向) -->
+      <rect class="zone-aisle" x="340" y="40" width="80" height="520"/>
+
+      <!-- 工作区 A (左上) -->
+      <rect class="zone-work" x="60" y="60" width="260" height="180"/>
+      <text class="label-title" x="190" y="145">工作区 A</text>
+      <text class="label-small" x="190" y="165">Assembly Station</text>
+
+      <!-- 工作区 B (右上) -->
+      <rect class="zone-work" x="440" y="60" width="300" height="180"/>
+      <text class="label-title" x="590" y="145">工作区 B</text>
+      <text class="label-small" x="590" y="165">Processing Line</text>
+
+      <!-- 工作区 C (左下) -->
+      <rect class="zone-work" x="60" y="360" width="260" height="180"/>
+      <text class="label-title" x="190" y="445">工作区 C</text>
+      <text class="label-small" x="190" y="465">Quality Control</text>
+
+      <!-- 工作区 D (右下) -->
+      <rect class="zone-work" x="440" y="360" width="300" height="180"/>
+      <text class="label-title" x="590" y="445">工作区 D</text>
+      <text class="label-small" x="590" y="465">Packaging</text>
+
+      <!-- 货架存储区 1 (上方左侧) -->
+      <rect class="zone-storage" x="60" y="260" width="260" height="60"/>
+      <text class="label" x="190" y="295">货架存储区 1</text>
+
+      <!-- 货架存储区 2 (上方右侧) -->
+      <rect class="zone-storage" x="440" y="260" width="300" height="60"/>
+      <text class="label" x="590" y="295">货架存储区 2</text>
+
+      <!-- 货架存储区 3 (下方左侧) -->
+      <rect class="zone-storage" x="60" y="420" width="260" height="60"/>
+      <text class="label" x="190" y="455">货架存储区 3</text>
+
+      <!-- 货架存储区 4 (下方右侧) -->
+      <rect class="zone-storage" x="440" y="420" width="300" height="60"/>
+      <text class="label" x="590" y="455">货架存储区 4</text>
+
+      <!-- 楼梯 1 (左上入口) -->
+      <rect class="zone-stair" x="50" y="50" width="60" height="50" rx="4"/>
+      <text class="label-small" x="80" y="80" text-anchor="middle" fill="#636366">楼梯 1</text>
+
+      <!-- 楼梯 2 (右上入口) -->
+      <rect class="zone-stair" x="690" y="50" width="60" height="50" rx="4"/>
+      <text class="label-small" x="720" y="80" text-anchor="middle" fill="#636366">楼梯 2</text>
+
+      <!-- 楼梯 3 (左下出口) -->
+      <rect class="zone-stair" x="50" y="500" width="60" height="50" rx="4"/>
+      <text class="label-small" x="80" y="530" text-anchor="middle" fill="#636366">楼梯 3</text>
+
+      <!-- 楼梯 4 (右下出口) -->
+      <rect class="zone-stair" x="690" y="500" width="60" height="50" rx="4"/>
+      <text class="label-small" x="720" y="530" text-anchor="middle" fill="#636366">楼梯 4</text>
+
+      <!-- 货架单元 - 存储区1 -->
+      <rect class="shelf" x="80" y="275" width="40" height="30"/>
+      <rect class="shelf" x="130" y="275" width="40" height="30"/>
+      <rect class="shelf" x="180" y="275" width="40" height="30"/>
+      <rect class="shelf" x="230" y="275" width="40" height="30"/>
+
+      <!-- 货架单元 - 存储区2 -->
+      <rect class="shelf" x="460" y="275" width="40" height="30"/>
+      <rect class="shelf" x="510" y="275" width="40" height="30"/>
+      <rect class="shelf" x="560" y="275" width="40" height="30"/>
+      <rect class="shelf" x="610" y="275" width="40" height="30"/>
+      <rect class="shelf" x="660" y="275" width="40" height="30"/>
+
+      <!-- 货架单元 - 存储区3 -->
+      <rect class="shelf" x="80" y="435" width="40" height="30"/>
+      <rect class="shelf" x="130" y="435" width="40" height="30"/>
+      <rect class="shelf" x="180" y="435" width="40" height="30"/>
+      <rect class="shelf" x="230" y="435" width="40" height="30"/>
+
+      <!-- 货架单元 - 存储区4 -->
+      <rect class="shelf" x="460" y="435" width="40" height="30"/>
+      <rect class="shelf" x="510" y="435" width="40" height="30"/>
+      <rect class="shelf" x="560" y="435" width="40" height="30"/>
+      <rect class="shelf" x="610" y="435" width="40" height="30"/>
+      <rect class="shelf" x="660" y="435" width="40" height="30"/>
+
+      <!-- 主通道标注 -->
+      <text class="label-small" x="400" y="305" text-anchor="middle">主通道 (东西向)</text>
+
+      <!-- 副通道标注 -->
+      <text class="label-small" x="375" y="180" text-anchor="middle" transform="rotate(-90, 375, 180)">副通道 (南北向)</text>
+
+      <!-- 指北针 -->
+      <g transform="translate(720, 540)">
+        <polygon class="north-arrow" points="0,-30 8,10 -2,10 0,-5 -8,10 2,10"/>
+        <text class="north-text" x="0" y="-40" text-anchor="middle">北</text>
+      </g>
+
+      <!-- 尺寸标注 -->
+      <line x1="40" y1="575" x2="760" y2="575" stroke="#d2d2d7" stroke-width="1"/>
+      <text class="label-small" x="400" y="590" text-anchor="middle">36,000 mm</text>
+
+      <line x1="770" y1="40" x2="770" y2="560" stroke="#d2d2d7" stroke-width="1"/>
+      <text class="label-small" x="785" y="300" text-anchor="middle" transform="rotate(90, 785, 300)">26,000 mm</text>
+
+      <!-- 入口方向标记 -->
+      <g transform="translate(80, 110)">
+        <polygon fill="#34c759" points="0,0 20,10 0,20"/>
+        <text class="label-small" x="25" y="15" fill="#34c759">入口</text>
+      </g>
+
+      <g transform="translate(720, 110)">
+        <polygon fill="#34c759" points="0,10 20,0 20,20" transform="scale(-1,1) translate(-40,0)"/>
+        <text class="label-small" x="25" y="15" fill="#34c759">入口</text>
+      </g>
+    </svg>
+  </div>
+</body>
+</html>
