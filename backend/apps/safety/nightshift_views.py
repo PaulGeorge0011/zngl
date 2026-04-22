@@ -1,6 +1,7 @@
 import logging
 from datetime import date, timedelta
 
+from django.db.models import Count, Q
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
@@ -402,3 +403,64 @@ def overview(request):
         result['recent_issues'] = []
 
     return Response(result)
+
+
+# ── 监护次数统计 ─────────────────────────────────────────────────────────────
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def inspector_stats(request):
+    """按监护人员汇总排班次数。
+
+    查询参数:
+      month=YYYY-MM : 仅统计指定月份（不传则统计全部历史）
+    返回每人的: 排班总数 / 已完成数 / 待执行数 / 有问题次数 / 本月次数。
+    """
+    month = request.query_params.get('month')
+    month_filter = Q()
+    if month:
+        try:
+            year_str, m_str = month.split('-')
+            month_filter = Q(duty_date__year=int(year_str), duty_date__month=int(m_str))
+        except (ValueError, IndexError):
+            month_filter = Q()
+
+    qs = NightShiftDuty.objects.select_related('inspector').all()
+    if month_filter:
+        qs = qs.filter(month_filter)
+
+    agg = (
+        qs.values('inspector_id')
+        .annotate(
+            total=Count('id'),
+            completed=Count('id', filter=Q(status='completed')),
+            pending=Count('id', filter=Q(status='pending')),
+            with_issues=Count('id', filter=Q(record__has_issues=True)),
+        )
+        .order_by('-total')
+    )
+
+    # 预取 inspector 信息，避免 N+1 查询
+    from django.contrib.auth.models import User
+    inspector_ids = [row['inspector_id'] for row in agg]
+    users = {u.id: u for u in User.objects.filter(id__in=inspector_ids)}
+
+    results = []
+    for row in agg:
+        user = users.get(row['inspector_id'])
+        if not user:
+            continue
+        results.append({
+            'inspector_id': row['inspector_id'],
+            'username': user.username,
+            'display_name': user.get_full_name() or user.username,
+            'total': row['total'],
+            'completed': row['completed'],
+            'pending': row['pending'],
+            'with_issues': row['with_issues'],
+        })
+
+    return Response({
+        'month': month or 'all',
+        'results': results,
+    })

@@ -119,6 +119,21 @@ export interface RecordListResponse {
   results: NightShiftRecordListItem[]
 }
 
+export interface InspectorStatRow {
+  inspector_id: number
+  username: string
+  display_name: string
+  total: number
+  completed: number
+  pending: number
+  with_issues: number
+}
+
+export interface InspectorStatsResponse {
+  month: string
+  results: InspectorStatRow[]
+}
+
 const BASE = '/api/safety/nightshift'
 
 export const nightshiftApi = {
@@ -193,5 +208,11 @@ export const nightshiftApi = {
   // Overview
   getOverview() {
     return http.get<NightShiftOverview>(`${BASE}/overview/`)
+  },
+
+  // Inspector stats（按人员汇总监护次数，可选 month=YYYY-MM）
+  getInspectorStats(month?: string) {
+    const params = month ? { month } : {}
+    return http.get<InspectorStatsResponse>(`${BASE}/inspector-stats/`, { params })
   },
 }

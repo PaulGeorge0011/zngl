@@ -60,4 +60,5 @@ urlpatterns = [
     path('nightshift/records/create/', nightshift_views.record_create, name='nightshift-record-create'),
     path('nightshift/records/<int:pk>/', nightshift_views.record_detail, name='nightshift-record-detail'),
     path('nightshift/overview/', nightshift_views.overview, name='nightshift-overview'),
+    path('nightshift/inspector-stats/', nightshift_views.inspector_stats, name='nightshift-inspector-stats'),
 ]
