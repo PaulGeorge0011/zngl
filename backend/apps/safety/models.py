@@ -483,6 +483,12 @@ class RectificationOrder(models.Model):
         User, on_delete=models.SET_NULL, null=True, blank=True,
         related_name='verified_rectifications', verbose_name='验证人',
     )
+    verifier_assigner = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='dispatched_verifier_rectifications',
+        verbose_name='验证人分派人',
+    )
+    verifier_assigned_at = models.DateTimeField('验证人分派时间', null=True, blank=True)
     verified_at = models.DateTimeField('验证时间', null=True, blank=True)
     verify_remark = models.TextField('验证意见', blank=True)
     reject_count = models.PositiveSmallIntegerField('被驳回次数', default=0)
@@ -534,6 +540,7 @@ class RectificationLog(models.Model):
         ('create', '创建'),
         ('assign', '分派'),
         ('reassign', '改派'),
+        ('assign_verifier', '分派验证人'),
         ('submit_rectify', '提交整改'),
         ('verify_pass', '验证通过'),
         ('verify_reject', '验证驳回'),
@@ -559,6 +566,36 @@ class RectificationLog(models.Model):
         verbose_name = '整改操作日志'
         verbose_name_plural = '整改操作日志'
         ordering = ['-created_at']
+
+
+class RectificationNotifyRecipient(models.Model):
+    """整改中心新工单时接收短信通知的人员配置。
+
+    可按来源类型过滤：source_type 为空时对所有来源生效，
+    否则仅在匹配来源（hazard_report/dustroom_inspection/nightshift_check）时触发。
+    """
+
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE,
+        related_name='rectification_notify_subs', verbose_name='通知接收人',
+    )
+    source_type = models.CharField(
+        '来源过滤', max_length=30, blank=True, default='',
+        help_text='留空表示所有来源；否则仅匹配的来源会触发通知',
+        choices=[('', '全部来源')] + RectificationOrder.SOURCE_TYPE_CHOICES,
+    )
+    enabled = models.BooleanField('启用', default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = '整改通知接收人'
+        verbose_name_plural = '整改通知接收人'
+        unique_together = ['user', 'source_type']
+        ordering = ['user_id']
+
+    def __str__(self):
+        src = self.get_source_type_display() if self.source_type else '全部来源'
+        return f'{self.user.username} ({src})'
 
 
 class MezzanineRecord(models.Model):

@@ -15,14 +15,29 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from . import rectification_service as svc
-from .models import RectificationOrder
+from .models import RectificationOrder, RectificationNotifyRecipient
 from .permissions import IsSafetyOfficer
 from .rectification_serializers import (
     RectificationDetailSerializer,
     RectificationListSerializer,
+    RectificationNotifyRecipientSerializer,
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _is_safety_officer(user) -> bool:
+    return (
+        user.is_authenticated
+        and (user.is_superuser or user.groups.filter(name='安全员').exists())
+    )
+
+
+def _can_assign_or_verify(user, order: RectificationOrder) -> bool:
+    """安全员可随意分派/验证；指派的 verifier 也可分派或验证自己负责的工单。"""
+    if _is_safety_officer(user):
+        return True
+    return bool(user.is_authenticated and order.verifier_id == user.id)
 
 
 # ── 查询 ─────────────────────────────────────────────────────────────────────
@@ -108,13 +123,16 @@ def order_detail(request, pk):
 # ── 状态流转 ────────────────────────────────────────────────────────────────
 
 @api_view(['POST'])
-@permission_classes([IsSafetyOfficer])
+@permission_classes([IsAuthenticated])
 def order_assign(request, pk):
-    """安全员分派整改责任人。"""
+    """分派整改责任人；安全员或指派验证人可操作。"""
     try:
         order = RectificationOrder.objects.get(pk=pk)
     except RectificationOrder.DoesNotExist:
         return Response({'error': '整改工单不存在'}, status=404)
+
+    if not _can_assign_or_verify(request.user, order):
+        return Response({'error': '仅安全员或该工单的指派验证人可以分派'}, status=403)
 
     assignee_id = request.data.get('assignee_id')
     if not assignee_id:
@@ -149,13 +167,16 @@ def order_assign(request, pk):
 
 
 @api_view(['POST'])
-@permission_classes([IsSafetyOfficer])
+@permission_classes([IsAuthenticated])
 def order_reassign(request, pk):
-    """安全员改派整改责任人。"""
+    """改派整改责任人；安全员或指派验证人可操作。"""
     try:
         order = RectificationOrder.objects.get(pk=pk)
     except RectificationOrder.DoesNotExist:
         return Response({'error': '整改工单不存在'}, status=404)
+
+    if not _can_assign_or_verify(request.user, order):
+        return Response({'error': '仅安全员或该工单的指派验证人可以改派'}, status=403)
 
     assignee_id = request.data.get('assignee_id')
     try:
@@ -213,13 +234,16 @@ def order_submit(request, pk):
 
 
 @api_view(['POST'])
-@permission_classes([IsSafetyOfficer])
+@permission_classes([IsAuthenticated])
 def order_verify(request, pk):
-    """安全员验证整改结果。"""
+    """验证整改结果；安全员或指派验证人可操作。"""
     try:
         order = RectificationOrder.objects.get(pk=pk)
     except RectificationOrder.DoesNotExist:
         return Response({'error': '整改工单不存在'}, status=404)
+
+    if not _can_assign_or_verify(request.user, order):
+        return Response({'error': '仅安全员或该工单的指派验证人可以验证'}, status=403)
 
     action = request.data.get('action')
     if action not in ('approve', 'reject'):
@@ -277,6 +301,100 @@ def my_rectifications(request):
         'to_assign': RectificationOrder.objects.filter(status='pending').count(),
         'is_safety_officer': is_officer,
     })
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def order_assign_verifier(request, pk):
+    """分派验证人。安全员始终可操作；已指派验证人也可改派。"""
+    try:
+        order = RectificationOrder.objects.get(pk=pk)
+    except RectificationOrder.DoesNotExist:
+        return Response({'error': '整改工单不存在'}, status=404)
+
+    if not _can_assign_or_verify(request.user, order):
+        return Response({'error': '仅安全员或该工单的指派验证人可以分派验证人'}, status=403)
+
+    verifier_id = request.data.get('verifier_id')
+    if not verifier_id:
+        return Response({'error': '请选择验证人'}, status=400)
+    try:
+        verifier = User.objects.get(pk=verifier_id)
+    except (User.DoesNotExist, TypeError, ValueError):
+        return Response({'error': '验证人不存在'}, status=400)
+
+    try:
+        order = svc.assign_verifier(
+            order, verifier=verifier, operator=request.user,
+            remark=request.data.get('remark', ''),
+        )
+    except (svc.StateTransitionError, ValueError) as e:
+        return Response({'error': str(e)}, status=400)
+    return Response(RectificationDetailSerializer(order, context={'request': request}).data)
+
+
+# ── 通知接收人配置 ──────────────────────────────────────────────────────────
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def notify_config_list_create(request):
+    """列出 / 新增 整改新工单通知接收人。仅安全员可增删。"""
+    if request.method == 'GET':
+        qs = RectificationNotifyRecipient.objects.select_related('user__profile').all()
+        return Response(
+            RectificationNotifyRecipientSerializer(qs, many=True).data
+        )
+
+    if not _is_safety_officer(request.user):
+        return Response({'error': '仅安全员可配置通知接收人'}, status=403)
+
+    user_id = request.data.get('user_id')
+    source_type = request.data.get('source_type', '') or ''
+    if not user_id:
+        return Response({'error': '请选择用户'}, status=400)
+    try:
+        user = User.objects.get(pk=user_id)
+    except (User.DoesNotExist, TypeError, ValueError):
+        return Response({'error': '用户不存在'}, status=400)
+
+    valid_sources = {'', 'hazard_report', 'dustroom_inspection', 'nightshift_check'}
+    if source_type not in valid_sources:
+        return Response({'error': '来源类型无效'}, status=400)
+
+    obj, created = RectificationNotifyRecipient.objects.get_or_create(
+        user=user, source_type=source_type,
+        defaults={'enabled': True},
+    )
+    if not created and not obj.enabled:
+        obj.enabled = True
+        obj.save(update_fields=['enabled'])
+
+    return Response(
+        RectificationNotifyRecipientSerializer(obj).data,
+        status=201 if created else 200,
+    )
+
+
+@api_view(['PATCH', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def notify_config_detail(request, pk):
+    """更新启用状态 / 删除 通知接收人。"""
+    if not _is_safety_officer(request.user):
+        return Response({'error': '仅安全员可配置通知接收人'}, status=403)
+    try:
+        obj = RectificationNotifyRecipient.objects.get(pk=pk)
+    except RectificationNotifyRecipient.DoesNotExist:
+        return Response({'error': '配置不存在'}, status=404)
+
+    if request.method == 'DELETE':
+        obj.delete()
+        return Response(status=204)
+
+    # PATCH: 仅支持切换 enabled
+    if 'enabled' in request.data:
+        obj.enabled = bool(request.data['enabled'])
+        obj.save(update_fields=['enabled'])
+    return Response(RectificationNotifyRecipientSerializer(obj).data)
 
 
 @api_view(['GET'])

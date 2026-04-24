@@ -14,6 +14,7 @@ from django.contrib.auth.models import User
 from django.db import transaction
 from django.utils import timezone
 
+from . import sms
 from .models import RectificationOrder, RectificationImage, RectificationLog
 
 logger = logging.getLogger(__name__)
@@ -84,6 +85,13 @@ def submit_issue(
         '整改工单创建: id=%s source=%s:%s by %s',
         order.id, source.source_type, source.source_id, submitter.username,
     )
+
+    # 通知场景(1): 新工单 -> 给配置接收人群发
+    try:
+        sms.notify_rect_created(order)
+    except Exception:
+        logger.exception('notify_rect_created failed for order %s', order.id)
+
     return order
 
 
@@ -118,6 +126,57 @@ def assign(
         to_status='fixing',
         remark=remark or f'分派给 {assignee.username}, 期限 {order.deadline:%Y-%m-%d %H:%M}',
     )
+
+    # 通知场景(2): 分派整改责任人 -> 通知 assignee
+    try:
+        sms.notify_rect_assigned(order)
+    except Exception:
+        logger.exception('notify_rect_assigned failed for order %s', order.id)
+
+    return order
+
+
+@transaction.atomic
+def assign_verifier(
+    order: RectificationOrder,
+    *,
+    verifier: User,
+    operator: User,
+    remark: str = '',
+) -> RectificationOrder:
+    """分派验证责任人。任意尚未闭环/取消的工单都可被指派或改派验证人。"""
+    if order.status in ('closed', 'cancelled'):
+        raise StateTransitionError('已闭环/已取消的工单不能指派验证人')
+    if order.assignee_id and order.assignee_id == verifier.id:
+        raise ValueError('验证人不能是整改责任人')
+
+    prev_verifier = order.verifier
+    order.verifier = verifier
+    order.verifier_assigner = operator
+    order.verifier_assigned_at = timezone.now()
+    order.save(update_fields=[
+        'verifier', 'verifier_assigner', 'verifier_assigned_at', 'updated_at',
+    ])
+
+    action_remark = remark or (
+        f'指派验证人: {verifier.username}' if prev_verifier is None
+        else f'改派验证人: {prev_verifier.username} -> {verifier.username}'
+    )
+    RectificationLog.objects.create(
+        order=order,
+        action='assign_verifier',
+        operator=operator,
+        from_status=order.status,
+        to_status=order.status,
+        remark=action_remark,
+    )
+
+    # 通知场景(3): 分派验证人 -> 通知 verifier
+    try:
+        sms.notify_rect_verifier_assigned(order)
+    except Exception:
+        logger.exception('notify_rect_verifier_assigned failed for order %s', order.id)
+
     return order
 
 
@@ -208,7 +267,9 @@ def verify(
         raise PermissionError('不能验证自己整改的工单')
 
     prev = order.status
-    order.verifier = operator
+    # 若工单已预分派验证人，保留原指派；否则把 operator 作为本次验证人
+    if not order.verifier_id:
+        order.verifier = operator
     order.verified_at = timezone.now()
     order.verify_remark = remark or ''
     order.status = 'closed' if passed else 'fixing'
@@ -227,6 +288,14 @@ def verify(
         to_status=order.status,
         remark=remark,
     )
+
+    # 通知场景(4): 工单闭环 -> 通知 submitter
+    if passed:
+        try:
+            sms.notify_rect_closed(order)
+        except Exception:
+            logger.exception('notify_rect_closed failed for order %s', order.id)
+
     return order
 
 

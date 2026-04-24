@@ -59,6 +59,16 @@
           </div>
         </div>
 
+        <!-- 验证人分派信息 -->
+        <div class="card" v-if="order.verifier_assigned_at">
+          <div class="card-title">验证人分派</div>
+          <div class="info-grid">
+            <div><label>验证人</label><div>{{ order.verifier?.display_name || '—' }}</div></div>
+            <div><label>分派人</label><div>{{ order.verifier_assigner?.display_name || '—' }}</div></div>
+            <div><label>分派时间</label><div>{{ formatDateTime(order.verifier_assigned_at) }}</div></div>
+          </div>
+        </div>
+
         <!-- 整改信息 -->
         <div class="card" v-if="order.assigned_at">
           <div class="card-title">整改进度</div>
@@ -132,9 +142,35 @@
         <div class="card">
           <div class="card-title">操作</div>
 
-          <!-- 分派 -->
-          <div v-if="order.status === 'pending' && isOfficer" class="action-block">
-            <div class="action-label">分派整改</div>
+          <!-- 分派验证人（未闭环/未取消随时可指派） -->
+          <div
+            v-if="canAssignOrVerify && order.status !== 'closed' && order.status !== 'cancelled'"
+            class="action-block"
+          >
+            <div class="action-label">{{ order.verifier ? '改派验证人' : '分派验证人' }}</div>
+            <el-select
+              v-model="verifierForm.verifierId" placeholder="选择验证人" filterable clearable
+              style="width: 100%; margin-bottom: 8px"
+            >
+              <el-option
+                v-for="u in users" :key="u.id"
+                :label="`${u.display_name || u.username} (${u.username})`" :value="u.id"
+              />
+            </el-select>
+            <el-input
+              v-model="verifierForm.remark" type="textarea" :rows="2"
+              placeholder="备注（选填）"
+              style="margin-bottom: 8px"
+            />
+            <el-button
+              type="primary" plain style="width: 100%"
+              :disabled="!verifierForm.verifierId" @click="onAssignVerifier"
+            >{{ order.verifier ? '确认改派' : '确认分派验证人' }}</el-button>
+          </div>
+
+          <!-- 分派责任人 -->
+          <div v-if="order.status === 'pending' && canAssignOrVerify" class="action-block">
+            <div class="action-label">分派整改责任人</div>
             <el-select
               v-model="assignForm.assigneeId" placeholder="选择责任人" filterable clearable
               style="width: 100%; margin-bottom: 8px"
@@ -184,7 +220,7 @@
           </div>
 
           <!-- 验证 -->
-          <div v-if="order.status === 'verifying' && isOfficer && !isMyAssignment" class="action-block">
+          <div v-if="order.status === 'verifying' && canAssignOrVerify && !isMyAssignment" class="action-block">
             <div class="action-label">验证整改</div>
             <el-input
               v-model="verifyForm.remark" type="textarea" :rows="2"
@@ -197,7 +233,7 @@
             </div>
           </div>
 
-          <!-- 取消 -->
+          <!-- 取消 — 仅安全员（重操作，保留正式权限） -->
           <div v-if="order.status !== 'closed' && order.status !== 'cancelled' && isOfficer" class="action-block">
             <div class="action-label">取消工单</div>
             <el-input
@@ -212,8 +248,7 @@
           </div>
 
           <div
-            v-if="(order.status === 'closed' || order.status === 'cancelled') ||
-                  (!isOfficer && !isMyAssignment && order.status !== 'fixing')"
+            v-if="!hasAnyAction"
             class="muted"
           >当前状态下你没有可执行的操作</div>
         </div>
@@ -254,6 +289,11 @@ const assignForm = reactive({
   remark: '',
 })
 
+const verifierForm = reactive({
+  verifierId: undefined as number | undefined,
+  remark: '',
+})
+
 const rectifyForm = reactive({
   description: '',
   fileList: [] as UploadUserFile[],
@@ -266,6 +306,25 @@ const isOfficer = computed(() => userStore.user?.role === 'safety_officer')
 
 const isMyAssignment = computed(() => {
   return order.value?.assignee?.id === userStore.user?.id
+})
+
+// 安全员 或 当前工单的指派验证人 都有分派/验证权限
+const canAssignOrVerify = computed(() => {
+  if (isOfficer.value) return true
+  const uid = userStore.user?.id
+  return !!uid && order.value?.verifier?.id === uid
+})
+
+// 右侧操作面板是否至少有一个可执行操作
+const hasAnyAction = computed(() => {
+  if (!order.value) return false
+  const st = order.value.status
+  if (st === 'closed' || st === 'cancelled') return false
+  // 分派验证人 + 分派/改派责任人 + 验证 — 安全员或指派验证人可操作
+  if (canAssignOrVerify.value) return true
+  // 提交整改 — 仅当前责任人
+  if (st === 'fixing' && isMyAssignment.value) return true
+  return false
 })
 
 const issueImages = computed(() => order.value?.images.filter(i => i.phase === 'issue') ?? [])
@@ -320,6 +379,22 @@ async function onAssign() {
     ElMessage.success('已分派')
   } catch (e: any) {
     ElMessage.error(e.response?.data?.error || '分派失败')
+  }
+}
+
+async function onAssignVerifier() {
+  if (!verifierForm.verifierId) return
+  try {
+    const { data } = await rectificationApi.assignVerifier(id, {
+      verifier_id: verifierForm.verifierId,
+      remark: verifierForm.remark,
+    })
+    order.value = data
+    verifierForm.verifierId = undefined
+    verifierForm.remark = ''
+    ElMessage.success('验证人已分派，短信通知已发送')
+  } catch (e: any) {
+    ElMessage.error(e.response?.data?.error || '分派验证人失败')
   }
 }
 

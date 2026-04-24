@@ -70,7 +70,12 @@ urlpatterns = [
     path('rectifications/<int:pk>/', rectification_views.order_detail, name='rect-detail'),
     path('rectifications/<int:pk>/assign/', rectification_views.order_assign, name='rect-assign'),
     path('rectifications/<int:pk>/reassign/', rectification_views.order_reassign, name='rect-reassign'),
+    path('rectifications/<int:pk>/assign-verifier/', rectification_views.order_assign_verifier, name='rect-assign-verifier'),
     path('rectifications/<int:pk>/submit/', rectification_views.order_submit, name='rect-submit'),
     path('rectifications/<int:pk>/verify/', rectification_views.order_verify, name='rect-verify'),
     path('rectifications/<int:pk>/cancel/', rectification_views.order_cancel, name='rect-cancel'),
+
+    # 整改新工单通知接收人配置
+    path('rectifications-notify-config/', rectification_views.notify_config_list_create, name='rect-notify-list'),
+    path('rectifications-notify-config/<int:pk>/', rectification_views.notify_config_detail, name='rect-notify-detail'),
 ]

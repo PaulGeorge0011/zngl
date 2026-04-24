@@ -52,10 +52,24 @@ export interface RectDetail extends RectListItem {
   assigner: UserBrief | null
   rectify_description: string
   verifier: UserBrief | null
+  verifier_assigner: UserBrief | null
+  verifier_assigned_at: string | null
   verified_at: string | null
   verify_remark: string
   images: RectImage[]
   logs: RectLog[]
+}
+
+export type RectNotifySource = '' | RectSourceType
+
+export interface RectNotifyRecipient {
+  id: number
+  user: UserBrief
+  source_type: RectNotifySource
+  source_type_display: string
+  phone: string
+  enabled: boolean
+  created_at: string
 }
 
 export interface RectListResponse {
@@ -115,6 +129,9 @@ export const rectificationApi = {
   reassign(id: number, payload: { assignee_id: number; deadline?: string; remark?: string }) {
     return http.post<RectDetail>(`/api/safety/rectifications/${id}/reassign/`, payload)
   },
+  assignVerifier(id: number, payload: { verifier_id: number; remark?: string }) {
+    return http.post<RectDetail>(`/api/safety/rectifications/${id}/assign-verifier/`, payload)
+  },
   submitRectify(id: number, data: FormData) {
     return http.post<RectDetail>(`/api/safety/rectifications/${id}/submit/`, data, {
       headers: { 'Content-Type': undefined },
@@ -125,5 +142,22 @@ export const rectificationApi = {
   },
   cancel(id: number, remark: string) {
     return http.post<RectDetail>(`/api/safety/rectifications/${id}/cancel/`, { remark })
+  },
+
+  // 新工单通知接收人配置
+  listNotifyRecipients() {
+    return http.get<RectNotifyRecipient[]>('/api/safety/rectifications-notify-config/')
+  },
+  addNotifyRecipient(payload: { user_id: number; source_type: RectNotifySource }) {
+    return http.post<RectNotifyRecipient>('/api/safety/rectifications-notify-config/', payload)
+  },
+  toggleNotifyRecipient(id: number, enabled: boolean) {
+    return http.patch<RectNotifyRecipient>(
+      `/api/safety/rectifications-notify-config/${id}/`,
+      { enabled }
+    )
+  },
+  removeNotifyRecipient(id: number) {
+    return http.delete(`/api/safety/rectifications-notify-config/${id}/`)
   },
 }

@@ -1,7 +1,10 @@
 """整改工单相关序列化器。"""
 from rest_framework import serializers
 
-from .models import RectificationOrder, RectificationImage, RectificationLog
+from .models import (
+    RectificationOrder, RectificationImage, RectificationLog,
+    RectificationNotifyRecipient,
+)
 from .serializers import UserBriefSerializer
 
 
@@ -59,6 +62,7 @@ class RectificationDetailSerializer(serializers.ModelSerializer):
     assignee = UserBriefSerializer(read_only=True)
     assigner = UserBriefSerializer(read_only=True)
     verifier = UserBriefSerializer(read_only=True)
+    verifier_assigner = UserBriefSerializer(read_only=True)
     source_type_display = serializers.CharField(source='get_source_type_display', read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     severity_display = serializers.CharField(source='get_severity_display', read_only=True)
@@ -76,8 +80,31 @@ class RectificationDetailSerializer(serializers.ModelSerializer):
             'submitter', 'assignee', 'assigner',
             'assigned_at', 'deadline',
             'rectify_description', 'rectified_at',
-            'verifier', 'verified_at', 'verify_remark',
+            'verifier', 'verifier_assigner', 'verifier_assigned_at',
+            'verified_at', 'verify_remark',
             'reject_count', 'overdue',
             'created_at', 'updated_at',
             'images', 'logs',
         ]
+
+
+class RectificationNotifyRecipientSerializer(serializers.ModelSerializer):
+    user = UserBriefSerializer(read_only=True)
+    source_type_display = serializers.SerializerMethodField()
+    phone = serializers.SerializerMethodField()
+
+    class Meta:
+        model = RectificationNotifyRecipient
+        fields = [
+            'id', 'user', 'source_type', 'source_type_display',
+            'phone', 'enabled', 'created_at',
+        ]
+
+    def get_source_type_display(self, obj):
+        return '全部来源' if not obj.source_type else obj.get_source_type_display()
+
+    def get_phone(self, obj):
+        profile = getattr(obj.user, 'profile', None)
+        if profile and getattr(profile, 'phone', ''):
+            return profile.phone
+        return ''

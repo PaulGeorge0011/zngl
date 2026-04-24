@@ -6,6 +6,7 @@ from .models import (
     NightShiftCategory, NightShiftCheckItem, NightShiftDuty,
     NightShiftRecord, NightShiftCheckResult, NightShiftIssue,
     RectificationOrder, RectificationImage, RectificationLog,
+    RectificationNotifyRecipient,
 )
 
 
@@ -136,7 +137,7 @@ class RectificationLogInline(admin.TabularInline):
 class RectificationOrderAdmin(admin.ModelAdmin):
     list_display = [
         'id', 'title', 'source_type', 'severity', 'status',
-        'submitter', 'assignee', 'deadline', 'overdue', 'created_at',
+        'submitter', 'assignee', 'verifier', 'deadline', 'overdue', 'created_at',
     ]
     list_filter = ['status', 'source_type', 'severity', 'overdue']
     search_fields = ['title', 'description']
@@ -144,7 +145,16 @@ class RectificationOrderAdmin(admin.ModelAdmin):
         'source_type', 'source_id', 'source_snapshot', 'status',
         'submitter', 'assignee', 'assigner', 'assigned_at',
         'rectify_description', 'rectified_at',
-        'verifier', 'verified_at', 'verify_remark',
+        'verifier', 'verifier_assigner', 'verifier_assigned_at',
+        'verified_at', 'verify_remark',
         'reject_count', 'overdue', 'created_at', 'updated_at',
     ]
     inlines = [RectificationImageInline, RectificationLogInline]
+
+
+@admin.register(RectificationNotifyRecipient)
+class RectificationNotifyRecipientAdmin(admin.ModelAdmin):
+    list_display = ['user', 'source_type', 'enabled', 'created_at']
+    list_filter = ['source_type', 'enabled']
+    list_editable = ['enabled']
+    search_fields = ['user__username']

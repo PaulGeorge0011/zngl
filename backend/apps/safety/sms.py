@@ -11,6 +11,7 @@ from typing import Iterable, Optional
 
 import requests
 from django.conf import settings
+from django.db.models import Q
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)
@@ -93,6 +94,113 @@ def build_duty_reminder(duty_date) -> str:
         f'请登录云中玉烟-制二综合管理-智能管理中枢，查看详情，'
         f'如需变更监护时间请与管理员联系，谢谢！'
     )
+
+
+# ── 整改中心相关 ──────────────────────────────────────────────────────────────
+
+_RECT_FOOTER = '详情请登录新媒体云中玉烟-制二综合管理-智能管理中枢-整改中心，进行查看。'
+
+
+def _user_phone(user) -> str:
+    """从 UserProfile 取手机号；空则返回空串。"""
+    if not user:
+        return ''
+    profile = getattr(user, 'profile', None)
+    if not profile:
+        return ''
+    phone = getattr(profile, 'phone', '') or ''
+    return phone.strip()
+
+
+def _fmt_deadline(dt) -> str:
+    """期限格式化：2026年04月24日18时30分。"""
+    if not dt:
+        return '指定时间'
+    return timezone.localtime(dt).strftime('%Y年%m月%d日%H时%M分')
+
+
+def _fmt_now_dt() -> str:
+    return timezone.localtime(timezone.now()).strftime('%Y年%m月%d日%H时%M分')
+
+
+def build_rect_assigned_content(role: str, deadline) -> str:
+    """分派整改责任人 / 分派验证人 的短信模板。
+
+    role: '负责' 或 '验证'
+    """
+    return (
+        f'[制丝二智能管理中枢]您{role}的问题整改将在'
+        f'{_fmt_deadline(deadline)}截止，'
+        f'{_RECT_FOOTER}'
+    )
+
+
+def build_rect_closed_content() -> str:
+    """工单闭环通知提交人的短信模板。"""
+    return (
+        f'[制丝二智能管理中枢]您提交的问题已于在'
+        f'{_fmt_now_dt()}完成闭环整改，'
+        f'{_RECT_FOOTER}'
+    )
+
+
+def build_rect_created_content(source_display: str, title: str) -> str:
+    """整改中心新工单的通知模板（给配置的关注人）。"""
+    return (
+        f'[制丝二智能管理中枢]整改中心新增[{source_display}]问题：'
+        f'{title}，{_RECT_FOOTER}'
+    )
+
+
+def notify_rect_assigned(order) -> None:
+    """分派整改责任人后通知：assignee -> 负责。"""
+    phone = _user_phone(order.assignee)
+    if not phone:
+        logger.info('[SMS] rect %s assignee no phone, skip', order.id)
+        return
+    content = build_rect_assigned_content('负责', order.deadline)
+    send_sms_async([phone], content)
+
+
+def notify_rect_verifier_assigned(order) -> None:
+    """分派验证人后通知：verifier -> 验证。"""
+    phone = _user_phone(order.verifier)
+    if not phone:
+        logger.info('[SMS] rect %s verifier no phone, skip', order.id)
+        return
+    content = build_rect_assigned_content('验证', order.deadline)
+    send_sms_async([phone], content)
+
+
+def notify_rect_closed(order) -> None:
+    """工单验证通过闭环后通知提交人。"""
+    phone = _user_phone(order.submitter)
+    if not phone:
+        logger.info('[SMS] rect %s submitter no phone, skip', order.id)
+        return
+    content = build_rect_closed_content()
+    send_sms_async([phone], content)
+
+
+def notify_rect_created(order) -> None:
+    """新工单创建后，通知配置表里匹配来源的接收人。"""
+    from .models import RectificationNotifyRecipient
+
+    recipients = RectificationNotifyRecipient.objects.filter(enabled=True).filter(
+        Q(source_type='') | Q(source_type=order.source_type)
+    ).select_related('user__profile')
+
+    phones = []
+    for r in recipients:
+        phone = _user_phone(r.user)
+        if phone and phone not in phones:
+            phones.append(phone)
+    if not phones:
+        logger.info('[SMS] rect %s no configured recipients, skip', order.id)
+        return
+
+    content = build_rect_created_content(order.get_source_type_display(), order.title)
+    send_sms_async(phones, content)
 
 
 def notify_duty_assigned(duty) -> Optional[bool]:

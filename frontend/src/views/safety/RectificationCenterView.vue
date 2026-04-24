@@ -5,14 +5,24 @@
         <h2 class="page-title">整改中心</h2>
         <p class="page-subtitle">所有安全管理模块发现的问题，统一在这里跟踪闭环</p>
       </div>
-      <div class="header-stats" v-if="stats">
-        <span class="stat-pill stat-pill--total">总数 {{ stats.total }}</span>
-        <span class="stat-pill stat-pill--pending">待分派 {{ stats.by_status.pending || 0 }}</span>
-        <span class="stat-pill stat-pill--fixing">整改中 {{ stats.by_status.fixing || 0 }}</span>
-        <span class="stat-pill stat-pill--verifying">待验证 {{ stats.by_status.verifying || 0 }}</span>
-        <span class="stat-pill stat-pill--overdue" v-if="stats.overdue > 0">逾期 {{ stats.overdue }}</span>
+      <div class="header-right">
+        <div class="header-stats" v-if="stats">
+          <span class="stat-pill stat-pill--total">总数 {{ stats.total }}</span>
+          <span class="stat-pill stat-pill--pending">待分派 {{ stats.by_status.pending || 0 }}</span>
+          <span class="stat-pill stat-pill--fixing">整改中 {{ stats.by_status.fixing || 0 }}</span>
+          <span class="stat-pill stat-pill--verifying">待验证 {{ stats.by_status.verifying || 0 }}</span>
+          <span class="stat-pill stat-pill--overdue" v-if="stats.overdue > 0">逾期 {{ stats.overdue }}</span>
+        </div>
+        <el-button
+          v-if="isOfficer" plain type="primary" size="small"
+          @click="notifyConfigVisible = true"
+        >
+          通知设置
+        </el-button>
       </div>
     </div>
+
+    <RectificationNotifyConfigDialog v-model="notifyConfigVisible" />
 
     <!-- 我的工作台四象限 -->
     <div class="tab-cards">
@@ -124,7 +134,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { rectificationApi } from '@/api/rectification'
 import type {
@@ -133,8 +143,13 @@ import type {
   RectStats,
   RectFilters,
 } from '@/api/rectification'
+import RectificationNotifyConfigDialog from './RectificationNotifyConfigDialog.vue'
+import { useUserStore } from '@/stores/user'
 
 const router = useRouter()
+const userStore = useUserStore()
+const isOfficer = computed(() => userStore.user?.role === 'safety_officer')
+const notifyConfigVisible = ref(false)
 
 const orders = ref<RectListItem[]>([])
 const loading = ref(false)
@@ -283,6 +298,13 @@ function formatDateTime(s: string | null): string {
 </script>
 
 <style scoped>
+.header-right {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
 .header-stats {
   display: flex;
   gap: 8px;
