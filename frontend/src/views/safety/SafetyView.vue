@@ -52,6 +52,22 @@
         </div>
       </router-link>
 
+      <router-link to="/safety/rectification" class="stat-card clickable">
+        <div class="stat-icon rectification">
+          <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M3 6h16M3 11h16M3 16h10"/><path d="M16 14l3 3-3 3"/>
+          </svg>
+        </div>
+        <div class="stat-body">
+          <div class="stat-value data-value" :class="{ warning: rectStats.overdue > 0 }">{{ rectStats.pending + rectStats.fixing + rectStats.verifying }}</div>
+          <div class="stat-label">整改中心</div>
+          <div class="stat-detail">
+            待分派 {{ rectStats.pending }} · 整改中 {{ rectStats.fixing }} · 待验证 {{ rectStats.verifying }}
+            <span v-if="rectStats.overdue > 0" class="warning-text">· 逾期 {{ rectStats.overdue }}</span>
+          </div>
+        </div>
+      </router-link>
+
       <router-link to="/safety/nightshift" class="stat-card clickable">
         <div class="stat-icon nightshift">
           <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -153,6 +169,7 @@ const nsOverview = ref<NightShiftOverview | null>(null)
 
 const hazardStats = ref({ pending: 0 })
 const mezzanineStats = ref({ onsite: 0, today: 0 })
+const rectStats = ref({ pending: 0, fixing: 0, verifying: 0, overdue: 0 })
 
 const nsStatusText = computed(() => {
   if (!nsOverview.value) return '-'
@@ -197,11 +214,12 @@ function progressPercent(c: { completed: number; expected: number }) {
 
 onMounted(async () => {
   try {
-    const [overviewRes, nsRes, hazardRes, mezzRes] = await Promise.allSettled([
+    const [overviewRes, nsRes, hazardRes, mezzRes, rectRes] = await Promise.allSettled([
       dustroomApi.getOverview(),
       nightshiftApi.getOverview(),
       http.get('/api/safety/hazards/', { params: { status: 'pending', page_size: 1 } }),
       http.get('/api/safety/mezzanine/history/', { params: { status: 'onsite', page_size: 1 } }),
+      http.get('/api/safety/rectifications/stats/'),
     ])
     if (overviewRes.status === 'fulfilled') {
       overview.value = overviewRes.value.data
@@ -216,6 +234,15 @@ onMounted(async () => {
       const d = mezzRes.value.data
       mezzanineStats.value.onsite = d.stats?.onsite_count || 0
       mezzanineStats.value.today = d.stats?.today_count || 0
+    }
+    if (rectRes.status === 'fulfilled') {
+      const s = rectRes.value.data.by_status || {}
+      rectStats.value = {
+        pending: s.pending || 0,
+        fixing: s.fixing || 0,
+        verifying: s.verifying || 0,
+        overdue: rectRes.value.data.overdue || 0,
+      }
     }
   } finally { loading.value = false }
 })
@@ -241,6 +268,7 @@ onMounted(async () => {
 .stat-icon.hazard { background: rgba(0,212,170,0.12); color: var(--color-healthy); }
 .stat-icon.nightshift { background: rgba(52,73,94,0.15); color: #5dade2; }
 .stat-icon.mezzanine { background: rgba(155,89,255,0.12); color: #9b59ff; }
+.stat-icon.rectification { background: rgba(255, 138, 76, 0.12); color: #ff8a4c; }
 .abnormal-row.resolved { border-left-color: var(--color-healthy); }
 .stat-body { flex: 1; }
 .stat-value { font-size: 1.4rem; font-weight: 700; color: var(--text-primary); line-height: 1.2; }

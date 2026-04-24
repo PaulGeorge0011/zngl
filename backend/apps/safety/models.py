@@ -407,6 +407,160 @@ class NightShiftIssue(models.Model):
         return f"[{status}] {self.description[:30]}"
 
 
+# ── 统一整改工单 ────────────────────────────────────────────────────────────
+#
+# 所有安全管理模块（隐患上报、除尘房巡检、夜班监护等）发现的问题，
+# 都通过 RectificationOrder 统一走 "分派 → 整改 → 验证 → 闭环" 流程。
+# 来源模块通过 (source_type, source_id) 多态引用回原始记录。
+#
+# 状态流转仅允许通过 rectification_service 进行，禁止直接 update status。
+
+class RectificationOrder(models.Model):
+    """统一整改工单"""
+
+    SOURCE_TYPE_CHOICES = [
+        ('hazard_report', '安全隐患上报'),
+        ('dustroom_inspection', '除尘房巡检'),
+        ('nightshift_check', '夜班监护检查'),
+    ]
+
+    STATUS_CHOICES = [
+        ('pending', '待分派'),
+        ('fixing', '整改中'),
+        ('verifying', '待验证'),
+        ('closed', '已闭环'),
+        ('cancelled', '已取消'),
+    ]
+
+    SEVERITY_CHOICES = [
+        ('general', '一般'),
+        ('major', '重要'),
+        ('critical', '严重'),
+    ]
+
+    # 来源（多态引用）
+    source_type = models.CharField(
+        '来源类型', max_length=30, choices=SOURCE_TYPE_CHOICES
+    )
+    source_id = models.PositiveIntegerField('来源记录ID')
+    source_snapshot = models.JSONField(
+        '来源快照', default=dict, blank=True,
+        help_text='来源关键信息快照，原记录变更不影响工单上下文',
+    )
+
+    # 问题信息
+    title = models.CharField('问题标题', max_length=200)
+    description = models.TextField('问题描述')
+    location_text = models.CharField('问题位置', max_length=200, blank=True)
+    severity = models.CharField(
+        '严重等级', max_length=20, choices=SEVERITY_CHOICES, default='general',
+    )
+
+    # 流转字段
+    status = models.CharField(
+        '状态', max_length=20, choices=STATUS_CHOICES, default='pending',
+    )
+
+    submitter = models.ForeignKey(
+        User, on_delete=models.PROTECT,
+        related_name='submitted_rectifications', verbose_name='提交人',
+    )
+    assignee = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='assigned_rectifications', verbose_name='整改责任人',
+    )
+    assigner = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='dispatched_rectifications', verbose_name='分派人',
+    )
+    assigned_at = models.DateTimeField('分派时间', null=True, blank=True)
+    deadline = models.DateTimeField('整改期限', null=True, blank=True)
+
+    rectify_description = models.TextField('整改说明', blank=True)
+    rectified_at = models.DateTimeField('整改完成时间', null=True, blank=True)
+
+    verifier = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='verified_rectifications', verbose_name='验证人',
+    )
+    verified_at = models.DateTimeField('验证时间', null=True, blank=True)
+    verify_remark = models.TextField('验证意见', blank=True)
+    reject_count = models.PositiveSmallIntegerField('被驳回次数', default=0)
+
+    overdue = models.BooleanField('已逾期', default=False)
+
+    created_at = models.DateTimeField('创建时间', auto_now_add=True)
+    updated_at = models.DateTimeField('更新时间', auto_now=True)
+
+    class Meta:
+        verbose_name = '整改工单'
+        verbose_name_plural = '整改工单'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['source_type', 'source_id']),
+            models.Index(fields=['assignee', 'status']),
+            models.Index(fields=['status', 'deadline']),
+        ]
+
+    def __str__(self) -> str:
+        return f'[{self.get_source_type_display()}] {self.title}'
+
+
+class RectificationImage(models.Model):
+    """整改工单图片（问题现场 / 整改佐证）"""
+
+    PHASE_CHOICES = [
+        ('issue', '问题现场'),
+        ('rectify', '整改佐证'),
+    ]
+
+    order = models.ForeignKey(
+        RectificationOrder, on_delete=models.CASCADE,
+        related_name='images', verbose_name='工单',
+    )
+    image = models.ImageField('图片', upload_to='rectifications/%Y/%m/')
+    phase = models.CharField('阶段', max_length=10, choices=PHASE_CHOICES)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = '整改工单图片'
+        verbose_name_plural = '整改工单图片'
+
+
+class RectificationLog(models.Model):
+    """整改工单操作日志（审计追溯）"""
+
+    ACTION_CHOICES = [
+        ('create', '创建'),
+        ('assign', '分派'),
+        ('reassign', '改派'),
+        ('submit_rectify', '提交整改'),
+        ('verify_pass', '验证通过'),
+        ('verify_reject', '验证驳回'),
+        ('cancel', '取消'),
+        ('auto_overdue', '逾期标记'),
+    ]
+
+    order = models.ForeignKey(
+        RectificationOrder, on_delete=models.CASCADE,
+        related_name='logs', verbose_name='工单',
+    )
+    action = models.CharField('操作', max_length=30, choices=ACTION_CHOICES)
+    operator = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        verbose_name='操作人',
+    )
+    from_status = models.CharField('前状态', max_length=20, blank=True)
+    to_status = models.CharField('后状态', max_length=20, blank=True)
+    remark = models.TextField('备注', blank=True)
+    created_at = models.DateTimeField('时间', auto_now_add=True)
+
+    class Meta:
+        verbose_name = '整改操作日志'
+        verbose_name_plural = '整改操作日志'
+        ordering = ['-created_at']
+
+
 class MezzanineRecord(models.Model):
     """夹层施工人员入离场记录"""
 

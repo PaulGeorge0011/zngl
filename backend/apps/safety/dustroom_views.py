@@ -23,6 +23,7 @@ from .dustroom_serializers import (
     InspectionItemResultSerializer,
 )
 from .permissions import IsSafetyOfficer, IsDustRoomInspector
+from . import rectification_service as rect_svc
 
 logger = logging.getLogger(__name__)
 
@@ -257,16 +258,44 @@ def record_create(request):
     )
 
     valid_item_ids = set(tpl.items.values_list('id', flat=True))
+    abnormal_results: list[InspectionItemResult] = []
     for r in results_data:
         item_id = r.get('item')
         if item_id not in valid_item_ids:
             continue
-        InspectionItemResult.objects.create(
+        result = InspectionItemResult.objects.create(
             record=record,
             item_id=item_id,
             value=str(r.get('value', '')),
             is_normal=r.get('is_normal', True),
             remark=r.get('remark', ''),
+        )
+        if not result.is_normal and result.remark.strip():
+            abnormal_results.append(result)
+
+    # 每个有描述的异常项自动生成一条整改工单，进入统一整改中心
+    for result in abnormal_results:
+        title = f'{room.name} {result.item.name} 异常'
+        rect_svc.submit_issue(
+            source=rect_svc.SourceRef(
+                source_type='dustroom_inspection',
+                source_id=result.id,
+                snapshot={
+                    'record_id': record.id,
+                    'dust_room_id': room.id,
+                    'dust_room_name': room.name,
+                    'item_id': result.item_id,
+                    'item_name': result.item.name,
+                    'role': tpl.role,
+                    'inspection_date': record.inspection_date.isoformat(),
+                    'value': result.value,
+                },
+            ),
+            title=title[:200],
+            description=result.remark,
+            submitter=request.user,
+            location_text=room.name,
+            severity='general',
         )
 
     return Response(

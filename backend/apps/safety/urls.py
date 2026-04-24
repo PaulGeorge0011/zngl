@@ -2,6 +2,7 @@ from django.urls import path
 from . import views
 from . import dustroom_views
 from . import nightshift_views
+from . import rectification_views
 
 urlpatterns = [
     # Knowledge base (existing)
@@ -61,4 +62,15 @@ urlpatterns = [
     path('nightshift/records/<int:pk>/', nightshift_views.record_detail, name='nightshift-record-detail'),
     path('nightshift/overview/', nightshift_views.overview, name='nightshift-overview'),
     path('nightshift/inspector-stats/', nightshift_views.inspector_stats, name='nightshift-inspector-stats'),
+
+    # ── 整改中心（统一工单） ──────────────────────────────────────
+    path('rectifications/', rectification_views.order_list, name='rect-list'),
+    path('rectifications/my/', rectification_views.my_rectifications, name='rect-my'),
+    path('rectifications/stats/', rectification_views.overview_stats, name='rect-stats'),
+    path('rectifications/<int:pk>/', rectification_views.order_detail, name='rect-detail'),
+    path('rectifications/<int:pk>/assign/', rectification_views.order_assign, name='rect-assign'),
+    path('rectifications/<int:pk>/reassign/', rectification_views.order_reassign, name='rect-reassign'),
+    path('rectifications/<int:pk>/submit/', rectification_views.order_submit, name='rect-submit'),
+    path('rectifications/<int:pk>/verify/', rectification_views.order_verify, name='rect-verify'),
+    path('rectifications/<int:pk>/cancel/', rectification_views.order_cancel, name='rect-cancel'),
 ]

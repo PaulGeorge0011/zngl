@@ -19,6 +19,7 @@ from .nightshift_serializers import (
 )
 from .permissions import IsSafetyOfficer
 from .sms import notify_duty_assigned
+from . import rectification_service as rect_svc
 
 logger = logging.getLogger(__name__)
 
@@ -284,12 +285,32 @@ def record_create(request):
         desc = issue.get('description', '').strip()
         if not desc:
             continue
-        NightShiftIssue.objects.create(
+        issue_obj = NightShiftIssue.objects.create(
             record=record,
             description=desc,
             rectification=issue.get('rectification', ''),
             is_resolved=issue.get('is_resolved', False),
         )
+        # 未标记"已整改"的问题自动创建整改工单，进入统一整改中心
+        if not issue_obj.is_resolved:
+            severity = issue.get('severity', 'general')
+            if severity not in ('general', 'major', 'critical'):
+                severity = 'general'
+            rect_svc.submit_issue(
+                source=rect_svc.SourceRef(
+                    source_type='nightshift_check',
+                    source_id=issue_obj.id,
+                    snapshot={
+                        'record_id': record.id,
+                        'inspection_date': record.inspection_date.isoformat(),
+                        'inspector_id': record.inspector_id,
+                    },
+                ),
+                title=f'夜班监护问题: {desc[:60]}',
+                description=desc,
+                submitter=request.user,
+                severity=severity,
+            )
 
     duty.status = 'completed'
     duty.record = record

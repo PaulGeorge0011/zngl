@@ -10,7 +10,7 @@ from django.views.decorators.csrf import csrf_exempt
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
-from .models import Location, HazardReport, HazardImage
+from .models import Location, HazardReport, HazardImage, RectificationOrder
 from .serializers import (
     LocationSerializer,
     HazardCreateSerializer,
@@ -18,6 +18,7 @@ from .serializers import (
     HazardDetailSerializer,
 )
 from .permissions import IsSafetyOfficer
+from . import rectification_service as rect_svc
 
 logger = logging.getLogger(__name__)
 
@@ -156,10 +157,44 @@ def _hazard_create(request):
     for img in images:
         HazardImage.objects.create(hazard=hazard, image=img, phase='report')
 
+    # 同步创建统一整改工单
+    severity = 'critical' if hazard.level == 'major' else 'general'
+    location_text = hazard.location.name
+    if hazard.location_detail:
+        location_text = f'{location_text} {hazard.location_detail}'.strip()
+    rect_svc.submit_issue(
+        source=rect_svc.SourceRef(
+            source_type='hazard_report',
+            source_id=hazard.id,
+            snapshot={
+                'hazard_id': hazard.id,
+                'level': hazard.level,
+                'location_id': hazard.location_id,
+                'location_detail': hazard.location_detail,
+            },
+        ),
+        title=hazard.title,
+        description=hazard.description,
+        submitter=request.user,
+        location_text=location_text,
+        severity=severity,
+        images=[img.image for img in hazard.images.filter(phase='report')],
+    )
+
     logger.info(f"隐患上报: {hazard.title} by {request.user.username}")
     return Response(
         HazardDetailSerializer(hazard, context={'request': request}).data,
         status=status.HTTP_201_CREATED,
+    )
+
+
+def _get_linked_rect_order(hazard: HazardReport) -> RectificationOrder | None:
+    """根据隐患反查关联的整改工单（最近一条）。"""
+    return (
+        RectificationOrder.objects
+        .filter(source_type='hazard_report', source_id=hazard.id)
+        .order_by('-created_at')
+        .first()
     )
 
 
@@ -204,6 +239,14 @@ def hazard_assign(request, pk):
     hazard.status = 'fixing'
     hazard.save(update_fields=['assignee', 'assigned_by', 'assigned_at', 'status', 'updated_at'])
 
+    # 同步关联整改工单
+    order = _get_linked_rect_order(hazard)
+    if order and order.status == 'pending':
+        try:
+            rect_svc.assign(order, assignee=assignee, assigner=request.user)
+        except rect_svc.StateTransitionError as e:
+            logger.warning('隐患 %s 关联工单分派失败: %s', hazard.id, e)
+
     logger.info(f"隐患分派: {hazard.title} -> {assignee.username}")
     return Response(HazardDetailSerializer(hazard, context={'request': request}).data)
 
@@ -235,8 +278,23 @@ def hazard_fix(request, pk):
 
     # Optional fix images
     images = request.FILES.getlist('images')[:3]
+    fix_images: list = []
     for img in images:
-        HazardImage.objects.create(hazard=hazard, image=img, phase='fix')
+        obj = HazardImage.objects.create(hazard=hazard, image=img, phase='fix')
+        fix_images.append(obj.image)
+
+    # 同步关联整改工单
+    order = _get_linked_rect_order(hazard)
+    if order and order.status == 'fixing' and order.assignee_id == request.user.id:
+        try:
+            rect_svc.submit_rectification(
+                order,
+                operator=request.user,
+                rectify_description=fix_description,
+                images=fix_images,
+            )
+        except (rect_svc.StateTransitionError, PermissionError, ValueError) as e:
+            logger.warning('隐患 %s 关联工单整改同步失败: %s', hazard.id, e)
 
     logger.info(f"隐患整改提交: {hazard.title} by {request.user.username}")
     return Response(HazardDetailSerializer(hazard, context={'request': request}).data)
@@ -268,6 +326,19 @@ def hazard_verify(request, pk):
     hazard.verified_at = timezone.now()
     hazard.verify_remark = remark
     hazard.save(update_fields=['verified_by', 'verified_at', 'verify_remark', 'status', 'updated_at'])
+
+    # 同步关联整改工单
+    order = _get_linked_rect_order(hazard)
+    if order and order.status == 'verifying':
+        try:
+            rect_svc.verify(
+                order,
+                operator=request.user,
+                passed=(action == 'approve'),
+                remark=remark,
+            )
+        except (rect_svc.StateTransitionError, PermissionError) as e:
+            logger.warning('隐患 %s 关联工单验证同步失败: %s', hazard.id, e)
 
     logger.info(f"隐患验证: {hazard.title} -> {action} by {request.user.username}")
     return Response(HazardDetailSerializer(hazard, context={'request': request}).data)

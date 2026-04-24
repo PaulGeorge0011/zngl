@@ -31,3 +31,11 @@ class IsDustRoomInspector(BasePermission):
         if not request.user.is_authenticated:
             return False
         return DustRoomInspector.objects.filter(user=request.user).exists()
+
+
+class IsRectificationAssignee(BasePermission):
+    """只有该整改工单的责任人可以提交整改"""
+    message = '只有整改责任人可以提交整改'
+
+    def has_object_permission(self, request, view, obj):
+        return request.user.is_authenticated and request.user == obj.assignee

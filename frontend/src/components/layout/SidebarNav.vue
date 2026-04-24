@@ -139,6 +139,12 @@
             </svg>
             随手拍
           </router-link>
+          <router-link to="/safety/rectification" class="nav-sub-item" :class="{ active: route.path.startsWith('/safety/rectification') }" @click="handleNavSelect">
+            <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M2 3h7M2 6.5h7M2 10h5"/><path d="M9 8.5l2 2-2 2"/>
+            </svg>
+            整改中心
+          </router-link>
           <router-link to="/safety/mezzanine" class="nav-sub-item" active-class="active" @click="handleNavSelect">
             <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.5">
               <rect x="1" y="3" width="11" height="8" rx="1.5"/>
