@@ -193,6 +193,18 @@ const router = createRouter({
           meta: { title: '隐患详情' },
         },
         {
+          path: 'safety/rectification',
+          name: 'RectificationCenter',
+          component: () => import('@/views/safety/RectificationCenterView.vue'),
+          meta: { title: '整改中心' },
+        },
+        {
+          path: 'safety/rectification/:id',
+          name: 'RectificationDetail',
+          component: () => import('@/views/safety/RectificationDetailView.vue'),
+          meta: { title: '整改详情' },
+        },
+        {
           path: 'settings/users',
           name: 'UserManage',
           component: () => import('@/views/settings/UserManageView.vue'),
