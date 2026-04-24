@@ -64,27 +64,18 @@ def order_list(request):
             Q(title__icontains=search) | Q(description__icontains=search)
         )
 
-    # 角色范围：非安全员默认只看与自己相关的工单
+    # 所有人可见所有工单 —— 整改全流程公开、公平、公正。
+    # 不同角色的差异体现在 *能否操作*（在详情页的操作按钮上受控），不在可见范围。
     scope = params.get('scope', '')
     user = request.user
-    is_officer = user.groups.filter(name='安全员').exists() or user.is_superuser
     if scope == 'assigned':
         qs = qs.filter(assignee=user)
     elif scope == 'submitted':
         qs = qs.filter(submitter=user)
     elif scope == 'to_verify':
         qs = qs.filter(status='verifying')
-        if not is_officer:
-            qs = qs.none()
     elif scope == 'to_assign':
         qs = qs.filter(status='pending')
-        if not is_officer:
-            qs = qs.none()
-    elif not is_officer:
-        # 默认范围：非安全员仅看自己相关（提交/整改/验证）
-        qs = qs.filter(
-            Q(submitter=user) | Q(assignee=user) | Q(verifier=user)
-        )
 
     page = int(params.get('page', 1))
     page_size = int(params.get('page_size', 20))
@@ -271,23 +262,19 @@ def order_cancel(request, pk):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def my_rectifications(request):
-    """当前登录用户的整改工单看板（四个页签的计数）。"""
+    """整改工单看板计数。
+
+    所有人都能看到 "待分派 / 待验证" 的全局数字（公开透明），
+    是否"能操作"由 is_safety_officer 决定，前端据此控制按钮显隐。
+    """
     user = request.user
     is_officer = user.groups.filter(name='安全员').exists() or user.is_superuser
 
-    to_fix = RectificationOrder.objects.filter(assignee=user, status='fixing').count()
-    submitted = RectificationOrder.objects.filter(submitter=user).count()
-    to_verify = 0
-    to_assign = 0
-    if is_officer:
-        to_verify = RectificationOrder.objects.filter(status='verifying').count()
-        to_assign = RectificationOrder.objects.filter(status='pending').count()
-
     return Response({
-        'to_fix': to_fix,
-        'submitted': submitted,
-        'to_verify': to_verify,
-        'to_assign': to_assign,
+        'to_fix': RectificationOrder.objects.filter(assignee=user, status='fixing').count(),
+        'submitted': RectificationOrder.objects.filter(submitter=user).count(),
+        'to_verify': RectificationOrder.objects.filter(status='verifying').count(),
+        'to_assign': RectificationOrder.objects.filter(status='pending').count(),
         'is_safety_officer': is_officer,
     })
 

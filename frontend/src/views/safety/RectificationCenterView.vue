@@ -179,9 +179,9 @@ const SEVERITY_OPTIONS = [
 
 const tabs = [
   { value: '' as const, label: '全部' },
+  { value: 'to_assign' as const, label: '待分派' },
   { value: 'assigned' as const, label: '待我整改' },
-  { value: 'to_verify' as const, label: '待我验证' },
-  { value: 'to_assign' as const, label: '待我分派' },
+  { value: 'to_verify' as const, label: '待验证' },
   { value: 'submitted' as const, label: '我提交的' },
 ]
 
