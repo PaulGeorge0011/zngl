@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 
-from django.contrib.auth.models import User
+from django.contrib.auth.models import Group, User
 from django.db.models import Count, Q
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
@@ -27,17 +27,37 @@ logger = logging.getLogger(__name__)
 
 
 def _is_safety_officer(user) -> bool:
+    """安全员或超级用户"""
     return (
         user.is_authenticated
+        and user.is_active
         and (user.is_superuser or user.groups.filter(name='安全员').exists())
     )
 
+def _is_assigner(user) -> bool:
+    """被授权的分派人"""
+    return (
+        user.is_authenticated
+        and user.is_active
+        and user.groups.filter(name='整改分派人').exists()
+    )
 
 def _can_assign_or_verify(user, order: RectificationOrder) -> bool:
-    """安全员可随意分派/验证；指派的 verifier 也可分派或验证自己负责的工单。"""
+    """
+    权限层级：
+    1. 超级用户/安全员：可分派/验证所有工单
+    2. 整改分派人：可分派所有工单
+    3. 指派的验证人：可分派/验证自己负责的工单
+    """
     if _is_safety_officer(user):
         return True
+    if _is_assigner(user):
+        return True
     return bool(user.is_authenticated and order.verifier_id == user.id)
+
+def _can_manage_assigners(user) -> bool:
+    """只有超级用户和安全员可以管理分派人"""
+    return _is_safety_officer(user)
 
 
 # ── 查询 ─────────────────────────────────────────────────────────────────────
@@ -132,7 +152,7 @@ def order_assign(request, pk):
         return Response({'error': '整改工单不存在'}, status=404)
 
     if not _can_assign_or_verify(request.user, order):
-        return Response({'error': '仅安全员或该工单的指派验证人可以分派'}, status=403)
+        return Response({'error': '您没有分派整改人的权限'}, status=403)
 
     assignee_id = request.data.get('assignee_id')
     if not assignee_id:
@@ -176,7 +196,7 @@ def order_reassign(request, pk):
         return Response({'error': '整改工单不存在'}, status=404)
 
     if not _can_assign_or_verify(request.user, order):
-        return Response({'error': '仅安全员或该工单的指派验证人可以改派'}, status=403)
+        return Response({'error': '您没有改派整改人的权限'}, status=403)
 
     assignee_id = request.data.get('assignee_id')
     try:
@@ -243,7 +263,7 @@ def order_verify(request, pk):
         return Response({'error': '整改工单不存在'}, status=404)
 
     if not _can_assign_or_verify(request.user, order):
-        return Response({'error': '仅安全员或该工单的指派验证人可以验证'}, status=403)
+        return Response({'error': '您没有验证整改的权限'}, status=403)
 
     action = request.data.get('action')
     if action not in ('approve', 'reject'):
@@ -313,7 +333,7 @@ def order_assign_verifier(request, pk):
         return Response({'error': '整改工单不存在'}, status=404)
 
     if not _can_assign_or_verify(request.user, order):
-        return Response({'error': '仅安全员或该工单的指派验证人可以分派验证人'}, status=403)
+        return Response({'error': '您没有分派验证人的权限'}, status=403)
 
     verifier_id = request.data.get('verifier_id')
     if not verifier_id:
@@ -416,3 +436,129 @@ def overview_stats(request):
         'by_source': source_counts,
         'overdue': overdue_count,
     })
+
+
+# ── 整改分派人管理 ──────────────────────────────────────────────────────────
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def list_assigners(request):
+    """查询已授权的分派人列表"""
+    if not _can_manage_assigners(request.user):
+        return Response({'error': '无权限'}, status=403)
+
+    group = Group.objects.filter(name='整改分派人').first()
+    if not group:
+        return Response({'assigners': []})
+
+    assigners = []
+    for user in group.user_set.select_related('profile').all():
+        display_name = user.username
+        if hasattr(user, 'profile') and user.profile:
+            display_name = user.profile.real_name or user.username
+
+        assigners.append({
+            'id': user.id,
+            'username': user.username,
+            'display_name': display_name,
+        })
+
+    return Response({'assigners': assigners})
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def grant_assigner(request):
+    """授予分派权限"""
+    if not _can_manage_assigners(request.user):
+        return Response({'error': '无权限'}, status=403)
+
+    user_id = request.data.get('user_id')
+    if not user_id:
+        return Response({'error': '缺少 user_id'}, status=400)
+
+    try:
+        user_id = int(user_id)
+        user = User.objects.get(id=user_id)
+        group, _ = Group.objects.get_or_create(name='整改分派人')
+        user.groups.add(group)
+
+        logger.info(f"用户 {request.user.username} 授予 {user.username} 整改分派权限")
+
+        return Response({
+            'success': True,
+            'message': f'已授予 {user.username} 分派权限'
+        })
+    except (ValueError, TypeError):
+        return Response({'error': 'user_id 格式错误'}, status=400)
+    except User.DoesNotExist:
+        return Response({'error': '用户不存在'}, status=404)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def revoke_assigner(request):
+    """撤销分派权限"""
+    if not _can_manage_assigners(request.user):
+        return Response({'error': '无权限'}, status=403)
+
+    user_id = request.data.get('user_id')
+    if not user_id:
+        return Response({'error': '缺少 user_id'}, status=400)
+
+    try:
+        user_id = int(user_id)
+        user = User.objects.get(id=user_id)
+        group = Group.objects.filter(name='整改分派人').first()
+        if group:
+            user.groups.remove(group)
+
+        logger.info(f"用户 {request.user.username} 撤销 {user.username} 整改分派权限")
+
+        return Response({
+            'success': True,
+            'message': f'已撤销 {user.username} 的分派权限'
+        })
+    except (ValueError, TypeError):
+        return Response({'error': 'user_id 格式错误'}, status=400)
+    except User.DoesNotExist:
+        return Response({'error': '用户不存在'}, status=404)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def list_assigner_candidates(request):
+    """获取可授权的用户候选列表（排除已授权和管理员）"""
+    if not _can_manage_assigners(request.user):
+        return Response({'error': '无权限'}, status=403)
+
+    # 获取已授权的分派人
+    assigner_group = Group.objects.filter(name='整改分派人').first()
+    existing_ids = list(assigner_group.user_set.values_list('id', flat=True)) if assigner_group else []
+
+    # 获取安全员
+    safety_group = Group.objects.filter(name='安全员').first()
+    safety_ids = list(safety_group.user_set.values_list('id', flat=True)) if safety_group else []
+
+    # 排除超级用户、安全员、已授权的分派人
+    candidates = User.objects.filter(
+        is_active=True
+    ).exclude(
+        id__in=existing_ids + safety_ids
+    ).exclude(
+        is_superuser=True
+    ).select_related('profile')
+
+    result = []
+    for user in candidates:
+        display_name = user.username
+        if hasattr(user, 'profile') and user.profile:
+            display_name = user.profile.real_name or user.username
+
+        result.append({
+            'id': user.id,
+            'username': user.username,
+            'display_name': display_name,
+        })
+
+    return Response({'candidates': result})

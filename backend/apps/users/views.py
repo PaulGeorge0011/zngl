@@ -52,6 +52,7 @@ def _user_data(user):
         'username': user.username,
         'display_name': user.get_full_name() or user.username,
         'role': role,
+        'is_assigner': '整改分派人' in groups,  # 整改分派权限
     }
 
 

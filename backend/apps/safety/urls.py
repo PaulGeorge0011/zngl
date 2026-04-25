@@ -11,12 +11,9 @@ urlpatterns = [
     # Locations
     path('locations/', views.location_list, name='safety-location-list'),
 
-    # Hazard reports
+    # Hazard reports（仅上报与查询；分派/整改/验证统一走整改中心）
     path('hazards/', views.hazard_list_create, name='safety-hazard-list'),
     path('hazards/<int:pk>/', views.hazard_detail, name='safety-hazard-detail'),
-    path('hazards/<int:pk>/assign/', views.hazard_assign, name='safety-hazard-assign'),
-    path('hazards/<int:pk>/fix/', views.hazard_fix, name='safety-hazard-fix'),
-    path('hazards/<int:pk>/verify/', views.hazard_verify, name='safety-hazard-verify'),
 
     # 夹层施工管理
     path('mezzanine/checkin/', views.mezzanine_checkin, name='mezzanine-checkin'),
@@ -78,4 +75,10 @@ urlpatterns = [
     # 整改新工单通知接收人配置
     path('rectifications-notify-config/', rectification_views.notify_config_list_create, name='rect-notify-list'),
     path('rectifications-notify-config/<int:pk>/', rectification_views.notify_config_detail, name='rect-notify-detail'),
+
+    # 整改分派人管理
+    path('rectifications/assigners/', rectification_views.list_assigners, name='rect-assigners-list'),
+    path('rectifications/assigners/grant/', rectification_views.grant_assigner, name='rect-assigners-grant'),
+    path('rectifications/assigners/revoke/', rectification_views.revoke_assigner, name='rect-assigners-revoke'),
+    path('rectifications/assigners/candidates/', rectification_views.list_assigner_candidates, name='rect-assigners-candidates'),
 ]
